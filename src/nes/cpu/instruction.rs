@@ -6,7 +6,7 @@ use super::{page_crossed, EmuImpl, Status};
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[rustfmt::skip]
 #[allow(clippy::upper_case_acronyms)]
-pub(crate) enum Mnemonic {
+pub(crate) enum Instruction {
     // Load/Store Operations
     LDA, LDX, LDY, STA, STX, STY,
     // Register Operations
@@ -34,17 +34,17 @@ pub(crate) enum Mnemonic {
 }
 
 pub(super) trait ExecuteInstruction {
-    fn execute(&mut self, nes: &mut Nes, inst: (Mnemonic, AddressingMode), operand: u16);
+    fn execute(&mut self, nes: &mut Nes, inst: (Instruction, AddressingMode), operand: u16);
 }
 
 impl<T: EmuImpl> ExecuteInstruction for T {
     fn execute(
         &mut self,
         nes: &mut Nes,
-        (instruction, mode): (Mnemonic, AddressingMode),
+        (instruction, mode): (Instruction, AddressingMode),
         operand: u16,
     ) {
-        use Mnemonic::*;
+        use Instruction::*;
 
         match instruction {
             LDA => {

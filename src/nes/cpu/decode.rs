@@ -1,9 +1,9 @@
 use super::addressing_mode::AddressingMode;
-use super::instruction::Mnemonic;
+use super::instruction::Instruction;
 
-pub(crate) fn decode(opcode: u8) -> (Mnemonic, AddressingMode) {
+pub(crate) fn decode(opcode: u8) -> (Instruction, AddressingMode) {
     use super::addressing_mode::AddressingMode::*;
-    use super::instruction::Mnemonic::*;
+    use super::instruction::Instruction::*;
 
     match opcode {
         0xA9 => (LDA, Immediate),
