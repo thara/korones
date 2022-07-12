@@ -1,6 +1,7 @@
 mod addressing_mode;
 mod decode;
 mod instruction;
+mod interrupt_handler;
 
 use crate::nes::Nes;
 
@@ -156,6 +157,9 @@ impl<T: EmuImpl> Emu for T {
         use addressing_mode::GetOperand;
         use decode::decode;
         use instruction::ExecuteInstruction;
+        use interrupt_handler::InterruptHandler;
+
+        self.handle_interrupt(nes);
 
         let op = self.fetch(nes);
 

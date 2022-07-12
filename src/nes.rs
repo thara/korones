@@ -6,6 +6,21 @@ struct Nes {
 
     cpu_cycle: u128,
     cpu_wram: [u8; 0x2000],
+
+    // current interrupt status
+    //
+    // `None` represents to no interrupted.
+    interrupt: Option<Interrupt>,
+}
+
+/// Kinds of CPU interrupts
+///
+/// It currently supports NMI and IRQ only.
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code, clippy::upper_case_acronyms)]
+pub enum Interrupt {
+    NMI,
+    IRQ,
 }
 
 struct Emu {}
