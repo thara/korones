@@ -1,8 +1,16 @@
-use crate::nes::Nes;
+use crate::memory_map::MemoryMap;
+
+use std::marker::PhantomData;
+
+mod bus;
+mod decode;
+mod emulator;
+
+pub(crate) use emulator::CpuEmulator;
 
 #[derive(Debug)]
 #[allow(dead_code)]
-pub(super) struct Cpu {
+pub(crate) struct Cpu {
     // https://wiki.nesdev.org/w/index.php?title=CPU_registers
 
     // Accumulator, Index X/Y register
@@ -24,9 +32,24 @@ pub(super) struct Cpu {
     ram: [u8; 0x2000],
 }
 
+impl Default for Cpu {
+    fn default() -> Self {
+        Cpu {
+            a: Default::default(),
+            x: Default::default(),
+            y: Default::default(),
+            s: Default::default(),
+            p: Default::default(),
+            pc: Default::default(),
+            cycles: Default::default(),
+            ram: [0; 0x2000],
+        }
+    }
+}
+
 bitflags! {
     #[derive(Default)]
-    pub(crate) struct Status: u8 {
+    struct Status: u8 {
         // Negative
         const N = 1 << 7;
         // Overflow
@@ -48,70 +71,72 @@ bitflags! {
     }
 }
 
-impl Status {
-    #[allow(dead_code)]
-    fn set_zn(&mut self, v: u8) {
-        self.set(Self::Z, v == 0);
-        self.set(Self::N, (v >> 7) & 1 == 1);
-    }
+pub(crate) trait CpuAccess {
+    fn get_cpu_mut(&mut self) -> &mut Cpu;
 }
 
-pub(super) trait CpuEmu {
-    type Bus: CpuBus;
+pub(crate) trait CpuTickHandler {
+    type State;
 
-    fn on_cpu_tick(nes: &mut Nes);
-
-    fn cpu_step(nes: &mut Nes) {
-        todo!();
-    }
-
-    fn read(nes: &mut Nes, addr: u16) -> u8 {
-        let value = match addr {
-            0x0000..=0x1FFF => nes.cpu.ram[addr as usize].into(),
-            0x2000..=0x3FFF => Self::Bus::read_ppu_reg(nes, addr),
-            0x4000..=0x4013 | 0x4015 => Self::Bus::read_apu_reg(nes, addr),
-            0x4016 | 0x4017 => Self::Bus::read_controller(nes, addr),
-            0x4020..=0xFFFF => Self::Bus::read_mapper(nes, addr),
-            _ => 0u8.into(),
-        };
-        Self::tick(nes);
-        value
-    }
-
-    fn write(nes: &mut Nes, addr: u16, value: u8) {
-        match addr {
-            0x0000..=0x1FFF => nes.cpu.ram[addr as usize] = value,
-            0x2000..=0x3FFF => Self::Bus::write_ppu_reg(nes, addr, value),
-            0x4000..=0x4013 | 0x4015 => Self::Bus::write_apu_reg(nes, addr, value),
-            0x4016 => Self::Bus::write_controller(nes, addr, value),
-            0x4017 => {
-                Self::Bus::write_controller(nes, addr, value);
-                Self::Bus::write_apu_reg(nes, addr, value);
-            }
-            0x4020..=0xFFFF => Self::Bus::write_mapper(nes, addr, value),
-            _ => {
-                //NOP
-            }
-        }
-        Self::tick(nes);
-    }
-
-    fn tick(nes: &mut Nes) {
-        Self::on_cpu_tick(nes);
-        nes.cpu.cycles += 1;
-    }
+    fn on_tick(state: &mut Self::State);
 }
 
-pub(super) trait CpuBus {
-    fn read_ppu_reg(nes: &mut Nes, addr: u16) -> u8;
-    fn write_ppu_reg(nes: &mut Nes, addr: u16, value: u8);
+/// `CpuContext` encapsulates the phantom types related to CPU operations.
+///
+/// Phantom types allow us to define generic behaviors without the need to use them in the runtime.
+/// In this context, they are used to represent the constraints and relations between different CPU components
+/// like CPU access, memory mapping, and tick handling.
+struct CpuContext<T: CpuAccess, M: MemoryMap<T>, F: CpuTickHandler<State = T>> {
+    t: PhantomData<T>,
+    m: PhantomData<M>,
+    f: PhantomData<F>,
+}
 
-    fn read_apu_reg(nes: &mut Nes, addr: u16) -> u8;
-    fn write_apu_reg(nes: &mut Nes, addr: u16, value: u8);
+type Instruction = (Mnemonic, AddressingMode);
 
-    fn read_controller(nes: &mut Nes, addr: u16) -> u8;
-    fn write_controller(nes: &mut Nes, addr: u16, value: u8);
+// 6502 addressing modes
+/// https://wiki.nesdev.org/w/index.php?title=CPU_addressing_modes
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[rustfmt::skip]
+enum AddressingMode {
+    Implicit,
+    Accumulator,
+    Immediate,
+    ZeroPage, ZeroPageX, ZeroPageY,
+    Absolute,
+    AbsoluteX { oops: bool },
+    AbsoluteY { oops: bool },
+    Relative,
+    Indirect, IndexedIndirect, IndirectIndexed { oops: bool }
+}
 
-    fn read_mapper(nes: &mut Nes, addr: u16) -> u8;
-    fn write_mapper(nes: &mut Nes, addr: u16, value: u8);
+// Mnemonics of CPU instructions
+#[derive(Debug, Eq, PartialEq)]
+#[rustfmt::skip]
+#[allow(clippy::upper_case_acronyms)]
+enum Mnemonic {
+    // Load/Store Operations
+    LDA, LDX, LDY, STA, STX, STY,
+    // Register Operations
+    TAX, TSX, TAY, TXA, TXS, TYA,
+    // Stack instructions
+    PHA, PHP, PLA, PLP,
+    // Logical instructions
+    AND, EOR, ORA, BIT,
+    // Arithmetic instructions
+    ADC, SBC, CMP, CPX, CPY,
+    // Increment/Decrement instructions
+    INC, INX, INY, DEC, DEX, DEY,
+    // Shift instructions
+    ASL, LSR, ROL, ROR,
+    // Jump instructions
+    JMP, JSR, RTS, RTI,
+    // Branch instructions
+    BCC, BCS, BEQ, BMI, BNE, BPL, BVC, BVS,
+    // Flag control instructions
+    CLC, CLD, CLI, CLV, SEC, SED, SEI,
+    // Misc
+    BRK, NOP,
+    // Unofficial
+    LAX, SAX, DCP, ISB, SLO, RLA, SRE, RRA,
 }
