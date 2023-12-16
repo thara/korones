@@ -1,6 +1,53 @@
-use super::{AddressingMode, Instruction, Mnemonic};
+pub type Instruction = (Mnemonic, AddressingMode);
 
-pub(super) fn decode(opcode: u8) -> Instruction {
+// 6502 addressing modes
+/// https://wiki.nesdev.org/w/index.php?title=CPU_addressing_modes
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[rustfmt::skip]
+pub enum AddressingMode {
+    Implicit,
+    Accumulator,
+    Immediate,
+    ZeroPage, ZeroPageX, ZeroPageY,
+    Absolute,
+    AbsoluteX { oops: bool },
+    AbsoluteY { oops: bool },
+    Relative,
+    Indirect, IndexedIndirect, IndirectIndexed { oops: bool }
+}
+
+// Mnemonics of CPU instructions
+#[derive(Debug, Eq, PartialEq)]
+#[rustfmt::skip]
+#[allow(clippy::upper_case_acronyms)]
+pub enum Mnemonic {
+    // Load/Store Operations
+    LDA, LDX, LDY, STA, STX, STY,
+    // Register Operations
+    TAX, TSX, TAY, TXA, TXS, TYA,
+    // Stack instructions
+    PHA, PHP, PLA, PLP,
+    // Logical instructions
+    AND, EOR, ORA, BIT,
+    // Arithmetic instructions
+    ADC, SBC, CMP, CPX, CPY,
+    // Increment/Decrement instructions
+    INC, INX, INY, DEC, DEX, DEY,
+    // Shift instructions
+    ASL, LSR, ROL, ROR,
+    // Jump instructions
+    JMP, JSR, RTS, RTI,
+    // Branch instructions
+    BCC, BCS, BEQ, BMI, BNE, BPL, BVC, BVS,
+    // Flag control instructions
+    CLC, CLD, CLI, CLV, SEC, SED, SEI,
+    // Misc
+    BRK, NOP,
+    // Unofficial
+    LAX, SAX, DCP, ISB, SLO, RLA, SRE, RRA,
+}
+
+pub fn decode(opcode: u8) -> Instruction {
     use AddressingMode::*;
     use Mnemonic::*;
 
